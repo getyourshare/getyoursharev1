@@ -20,11 +20,32 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 import jwt
 import os
+import logging
 from dotenv import load_dotenv
 
 # Importer les helpers Supabase
 from db_helpers import *
 from supabase_client import supabase
+
+# Initialize logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Import scheduler LEADS (démarrage automatique)
+try:
+    from scheduler.leads_scheduler import start_scheduler, stop_scheduler
+    SCHEDULER_AVAILABLE = True
+    logger.info("✅ LEADS scheduler loaded successfully")
+except ImportError as e:
+    SCHEDULER_AVAILABLE = False
+    logger.warning(f"⚠️ LEADS scheduler not available: {e}")
+    # Define dummy functions to prevent errors
+    def start_scheduler():
+        pass
+    def stop_scheduler():
+        pass
+
+import atexit
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -2995,8 +3016,75 @@ async def send_payment_reminders(payload: dict = Depends(verify_token)):
         print(f"❌ Error sending reminders: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ============================================
+# SYSTÈME LEADS - MARKETPLACE SERVICES
+# ============================================
+# Import des endpoints LEADS
+from endpoints.leads_endpoints import (
+    # Gestion des leads
+    create_lead,
+    validate_lead,
+    reject_lead,
+    get_lead_details,
+    get_campaign_leads,
+    get_influencer_leads,
+    get_merchant_leads,
+    
+    # Gestion des dépôts
+    create_deposit,
+    recharge_deposit,
+    get_deposit_balance,
+    get_deposit_transactions,
+    check_low_balance_deposits,
+    
+    # Statistiques
+    get_lead_stats,
+    get_campaign_stats,
+    get_influencer_performance,
+    
+    # Accords
+    create_agreement,
+    get_merchant_agreements,
+    sign_agreement
+)
+
+# Endpoints LEADS - Création et validation
+app.add_api_route("/api/leads/create", create_lead, methods=["POST"], tags=["Leads"])
+app.add_api_route("/api/leads/{lead_id}/validate", validate_lead, methods=["PUT"], tags=["Leads"])
+app.add_api_route("/api/leads/{lead_id}/reject", reject_lead, methods=["PUT"], tags=["Leads"])
+app.add_api_route("/api/leads/{lead_id}", get_lead_details, methods=["GET"], tags=["Leads"])
+app.add_api_route("/api/leads/campaign/{campaign_id}", get_campaign_leads, methods=["GET"], tags=["Leads"])
+app.add_api_route("/api/leads/influencer/{influencer_id}", get_influencer_leads, methods=["GET"], tags=["Leads"])
+app.add_api_route("/api/leads/merchant/my-leads", get_merchant_leads, methods=["GET"], tags=["Leads"])
+
+# Endpoints DÉPÔTS - Gestion financière
+app.add_api_route("/api/leads/deposits/create", create_deposit, methods=["POST"], tags=["Deposits"])
+app.add_api_route("/api/leads/deposits/recharge", recharge_deposit, methods=["POST"], tags=["Deposits"])
+app.add_api_route("/api/leads/deposits/balance", get_deposit_balance, methods=["GET"], tags=["Deposits"])
+app.add_api_route("/api/leads/deposits/transactions", get_deposit_transactions, methods=["GET"], tags=["Deposits"])
+app.add_api_route("/api/leads/deposits/low-balance", check_low_balance_deposits, methods=["GET"], tags=["Deposits"])
+
+# Endpoints STATISTIQUES
+app.add_api_route("/api/leads/stats/overview", get_lead_stats, methods=["GET"], tags=["Lead Stats"])
+app.add_api_route("/api/leads/stats/campaign/{campaign_id}", get_campaign_stats, methods=["GET"], tags=["Lead Stats"])
+app.add_api_route("/api/leads/stats/influencer/{influencer_id}", get_influencer_performance, methods=["GET"], tags=["Lead Stats"])
+
+# Endpoints ACCORDS PARTENARIATS
+app.add_api_route("/api/leads/agreements/create", create_agreement, methods=["POST"], tags=["Agreements"])
+app.add_api_route("/api/leads/agreements/merchant", get_merchant_agreements, methods=["GET"], tags=["Agreements"])
+app.add_api_route("/api/leads/agreements/{agreement_id}/sign", sign_agreement, methods=["PUT"], tags=["Agreements"])
+
 if __name__ == "__main__":
     import uvicorn
+    
+    # Démarrer le scheduler LEADS en arrière-plan
+    leads_scheduler = start_scheduler()
+    
+    # Arrêter le scheduler à la fermeture de l'application
+    if leads_scheduler:
+        atexit.register(stop_scheduler)
+    
     print("\n" + "="*60)
     print("🚀 Démarrage du serveur ShareYourSales API")
     print("="*60)
@@ -3008,6 +3096,11 @@ if __name__ == "__main__":
     print("📡 Webhooks: ACTIVÉS (Shopify, WooCommerce, TikTok Shop)")
     print("💳 Gateways: CMI, PayZen, Société Générale Maroc")
     print("📄 Facturation: AUTOMATIQUE (PDF + Emails)")
+    print("🎯 LEADS System: ACTIVÉ (Marketplace Services)")
+    print("   ├─ 🔄 Alertes automatiques: Toutes les heures")
+    print("   ├─ 📧 Alertes multi-niveau: 50%, 80%, 90%, 100%")
+    print("   ├─ 🧹 Nettoyage leads: 23:00 quotidien")
+    print("   └─ 📊 Rapports: 09:00 quotidien")
     print("🌐 API disponible sur: http://localhost:8001")
     print("📖 Documentation: http://localhost:8001/docs")
     print("="*60 + "\n")

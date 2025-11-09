@@ -7,13 +7,16 @@ from fastapi import FastAPI, HTTPException, Depends, status, Request, Response, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr, Field, constr, confloat, conint
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List, Dict, Any, Annotated
 from datetime import datetime, timedelta
 import jwt
 import os
 import json
 import bcrypt
+import time
+import random
+import logging
 from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -21,6 +24,10 @@ from slowapi.errors import RateLimitExceeded
 
 # Load environment variables FIRST
 load_dotenv()
+
+# Initialize logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Supabase client
 try:
@@ -31,6 +38,12 @@ try:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
     SUPABASE_ENABLED = supabase is not None
     print(f"✅ Supabase client créé: {SUPABASE_ENABLED}")
+    
+    # Helper function for other modules
+    def get_supabase_client():
+        """Return the global Supabase client instance"""
+        return supabase
+        
 except Exception as e:
     print(f"⚠️ Supabase non disponible: {e}")
     import traceback
@@ -325,15 +338,15 @@ def verify_password(password: str, hashed: str) -> bool:
 class User(BaseModel):
     id: Optional[str] = None
     email: EmailStr
-    username: constr(min_length=3, max_length=50)
+    username: Annotated[str, Field(min_length=3, max_length=50)]
     role: str = Field(default="user", pattern="^(user|influencer|merchant|admin)$")
     subscription_plan: str = Field(default="free", pattern="^(free|starter|pro|enterprise)$")
     created_at: Optional[datetime] = None
 
 class UserCreate(BaseModel):
     email: EmailStr
-    username: constr(min_length=3, max_length=50)
-    password: constr(min_length=8, max_length=128)
+    username: Annotated[str, Field(min_length=3, max_length=50)]
+    password: Annotated[str, Field(min_length=8, max_length=128)]
     role: str = Field(default="user", pattern="^(user|influencer|merchant|admin)$")
 
 class UserLogin(BaseModel):
@@ -344,38 +357,38 @@ class AffiliateLink(BaseModel):
     id: Optional[str] = None
     user_id: str
     product_url: str = Field(..., min_length=10, max_length=2048)
-    custom_slug: Optional[constr(min_length=3, max_length=100)] = None
-    commission_rate: confloat(ge=0.0, le=100.0) = 10.0
+    custom_slug: Optional[Annotated[str, Field(min_length=3, max_length=100)]] = None
+    commission_rate: Annotated[float, Field(ge=0.0, le=100.0)] = 10.0
     status: str = Field(default="active", pattern="^(active|inactive|suspended)$")
     created_at: Optional[datetime] = None
 
 class Product(BaseModel):
     id: Optional[str] = None
-    name: constr(min_length=3, max_length=200)
-    description: constr(min_length=10, max_length=5000)
-    price: confloat(ge=0.01)
-    category: constr(min_length=2, max_length=100)
+    name: Annotated[str, Field(min_length=3, max_length=200)]
+    description: Annotated[str, Field(min_length=10, max_length=5000)]
+    price: Annotated[float, Field(ge=0.01)]
+    category: Annotated[str, Field(min_length=2, max_length=100)]
     image_url: Optional[str] = Field(None, max_length=2048)
     merchant_id: str
-    commission_rate: confloat(ge=0.0, le=100.0) = 10.0
+    commission_rate: Annotated[float, Field(ge=0.0, le=100.0)] = 10.0
 
 class Campaign(BaseModel):
     id: Optional[str] = None
-    name: constr(min_length=3, max_length=200)
-    description: constr(min_length=10, max_length=5000)
+    name: Annotated[str, Field(min_length=3, max_length=200)]
+    description: Annotated[str, Field(min_length=10, max_length=5000)]
     start_date: datetime
     end_date: datetime
-    budget: confloat(ge=0.0)
+    budget: Annotated[float, Field(ge=0.0)]
     target_audience: Dict[str, Any]
     status: str = Field(default="draft", pattern="^(draft|active|paused|completed|cancelled)$")
 
 class ProductReview(BaseModel):
-    rating: conint(ge=1, le=5)
-    title: Optional[constr(max_length=200)] = None
-    comment: constr(min_length=10, max_length=2000)
+    rating: Annotated[int, Field(ge=1, le=5)]
+    title: Optional[Annotated[str, Field(max_length=200)]] = None
+    comment: Annotated[str, Field(min_length=10, max_length=2000)]
 
 class AffiliationRequest(BaseModel):
-    message: Optional[constr(max_length=1000)] = None
+    message: Optional[Annotated[str, Field(max_length=1000)]] = None
 
 # ============================================
 # MOCK DATA
